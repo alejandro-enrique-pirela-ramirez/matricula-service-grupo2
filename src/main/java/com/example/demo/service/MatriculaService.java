@@ -1,3 +1,4 @@
+
 package com.example.demo.service;
 
 import org.springframework.http.HttpStatus;
@@ -21,45 +22,79 @@ import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
-public class MatriculaService implements ObtenerMatriculaUseCase, ValidarYConfirmarMatriculaUseCase {
+public class MatriculaService
+        implements ObtenerMatriculaUseCase,
+                   ValidarYConfirmarMatriculaUseCase {
 
     private final MatriculaRepository matriculaRepository;
     private final CursoClient cursoClient;
     private final MatriculaMapper mapper;
 
+
     @Override
     @Transactional(readOnly = true)
     public MatriculaResponseDTO obtener(Long idMatricula) {
-        return mapper.toResponseDto(buscar(idMatricula));
+
+        Matricula matricula = buscar(idMatricula);
+
+        return mapper.toResponseDto(matricula);
     }
+
 
     @Override
     @Transactional
     public MatriculaResponseDTO validarYConfirmar(Long idMatricula) {
+
         Matricula matricula = buscar(idMatricula);
 
         boolean todosDisponibles = true;
+
         for (DetalleMatricula detalle : matricula.getDetalles()) {
-            CursoDisponibilidadDTO curso = cursoClient.obtenerCurso(detalle.getIdCurso());
-            boolean disponible = curso.getVacantesDisponibles() != null
-                    && curso.getVacantesDisponibles() > 0
-                    && EstadoCurso.ABIERTO.name().equals(curso.getEstadoCurso());
-            if (!disponible) {
+
+            CursoDisponibilidadDTO curso;
+
+            try {
+                curso = cursoClient.obtenerCurso(detalle.getIdCurso());
+            } catch (Exception ex) {
+                
+                todosDisponibles = false;
+                break;
+            }
+
+            boolean tieneVacantes =
+                    curso.getVacantesDisponibles() != null
+                    && curso.getVacantesDisponibles() > 0;
+
+            boolean estaAbierto =
+                    EstadoCurso.ABIERTO.name()
+                            .equals(curso.getEstadoCurso());
+
+            if (!tieneVacantes || !estaAbierto) {
                 todosDisponibles = false;
                 break;
             }
         }
 
-        matricula.setEstadoMatricula(todosDisponibles
-                ? EstadoMatricula.CONFIRMADA
-                : EstadoMatricula.RECHAZADA_SIN_VACANTES);
+        matricula.setEstadoMatricula(
+                todosDisponibles
+                        ? EstadoMatricula.CONFIRMADA
+                        : EstadoMatricula.RECHAZADA_SIN_VACANTES
+        );
 
-        return mapper.toResponseDto(matriculaRepository.save(matricula));
+        Matricula matriculaActualizada =
+                matriculaRepository.save(matricula);
+
+        return mapper.toResponseDto(matriculaActualizada);
     }
 
+ 
     private Matricula buscar(Long idMatricula) {
-        return matriculaRepository.findWithDetallesById(idMatricula)
+
+        return matriculaRepository
+                .findWithDetallesById(idMatricula)
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Matrícula no encontrada: " + idMatricula));
+                        HttpStatus.NOT_FOUND,
+                        "Matrícula no encontrada: " + idMatricula
+                ));
     }
 }
